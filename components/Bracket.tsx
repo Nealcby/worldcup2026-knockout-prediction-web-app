@@ -22,7 +22,7 @@ const HEADER_H = 64; // tall enough for trophy icon + round label + date range
 // Arrows:     2   4   6   8  10  12  14  16
 const C = [0,1,3,5,7,9,11,13,15,17]; // C[oldCol] = newCol
 
-const MATCH_W = 150;
+const MATCH_W = 162;
 const ARROW_W = 32;
 const COL_WIDTHS = [
   0,
@@ -142,7 +142,7 @@ export default function Bracket({ matches, predictions, liveResults, onPick, onD
             {/* Trophy lives in the header for the Final column — keeps the card cell unobstructed */}
             {isFinal && <span className="text-lg mb-0.5">🏆</span>}
             <span className={`text-[9px] font-bold uppercase tracking-[0.18em] ${isFinal ? "text-amber-300/90" : "text-white/40"}`}>
-              {t(key as any)}
+              {t(key as "roundOf32" | "roundOf16" | "quarterFinal" | "semiFinal" | "final")}
             </span>
             <span className={`text-[8px] tracking-wide ${isFinal ? "text-amber-400/50" : "text-white/20"}`}>
               {dates}

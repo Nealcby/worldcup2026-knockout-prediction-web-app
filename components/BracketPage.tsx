@@ -58,11 +58,12 @@ function applySlots(
 type LeftTab = "groups" | "teams";
 
 export default function BracketPage() {
-  const { t, locale } = useLocale();
+  const { t } = useLocale();
   const [predictions, setPredictions] = useState<Predictions>({});
   const [slots, setSlots] = useState<SlotAssignments>({});
   const [leftTab, setLeftTab] = useState<LeftTab>("groups");
   const [copied, setCopied] = useState(false);
+  const [panelOpen, setPanelOpen] = useState(false); // mobile drawer
   const bracketRef = useRef<HTMLDivElement>(null);
 
   const [groups, setGroups] = useState<LiveGroup[]>([]);
@@ -75,24 +76,29 @@ export default function BracketPage() {
     const shared = params.get("p");
     if (shared) {
       const decoded = decodePredictions(shared);
-      setPredictions(decoded.preds ?? decoded);
-      setSlots(decoded.slots ?? {});
+      // Batch both state updates in a single tick to avoid cascading renders
+      setTimeout(() => {
+        setPredictions(decoded.preds ?? decoded);
+        setSlots(decoded.slots ?? {});
+      }, 0);
     } else {
-      setPredictions(loadPredictions());
-      setSlots(loadSlots());
+      setTimeout(() => {
+        setPredictions(loadPredictions());
+        setSlots(loadSlots());
+      }, 0);
     }
   }, []);
 
   useEffect(() => {
-    setDataLoading(true);
     fetch("/api/tournament")
       .then(r => r.json())
       .then(data => {
         if (data.groups?.length) {
-          setGroups(data.groups);
           const map: Record<string, { name: string; flag: string }> = {};
           for (const g of data.groups as LiveGroup[])
             for (const team of g.teams) map[team.tla] = { name: team.name, flag: team.flag };
+          // Batch all state updates together
+          setGroups(data.groups);
           setTeamMap(map);
           setApiSlotMap(data.slotMap ?? {});
         }
@@ -226,26 +232,67 @@ export default function BracketPage() {
     id: tla, name: info.name, flag: info.flag,
   }));
 
+  const panelContent = (
+    <div className="flex flex-col h-full overflow-hidden">
+      {/* Tab bar */}
+      <div className="flex border-b border-white/[0.07] flex-shrink-0">
+        {(["groups","teams"] as LeftTab[]).map(tab => (
+          <button key={tab} onClick={() => setLeftTab(tab)}
+            className={`flex-1 text-[10px] py-2.5 font-semibold uppercase tracking-[0.14em] transition-all ${
+              leftTab === tab
+                ? "text-white border-b-2 border-blue-500"
+                : "text-white/25 hover:text-white/50"
+            }`}>
+            {t(tab as "groups" | "teams")}
+          </button>
+        ))}
+      </div>
+      {leftTab === "groups" ? (
+        <GroupStandings
+          groups={groups}
+          loading={dataLoading}
+          filledSlots={filledSlots}
+          slotToTeam={slotToTeam}
+
+          onRemoveByTeamId={handleRemoveByTeamId}
+        />
+      ) : (
+        <TeamPanel
+          teams={panelTeams}
+          usedTeamIds={usedTeamIds}
+          onRemoveByTeamId={handleRemoveByTeamId}
+        />
+      )}
+    </div>
+  );
+
   return (
     <div className="min-h-screen flex flex-col bg-[#0b0f1a] text-white">
 
       {/* ── Header ──────────────────────────────────────────────────────── */}
       <header className="flex-shrink-0 bg-[#0f1420] border-b border-white/[0.07]">
-        <div className="flex items-center px-5 py-3 gap-4">
+        <div className="flex items-center px-4 py-3 gap-3">
+
+          {/* Mobile panel toggle */}
+          <button
+            onClick={() => setPanelOpen(v => !v)}
+            className="lg:hidden flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-lg border border-white/[0.1] text-white/50 hover:text-white/80 hover:bg-white/[0.05] transition-all text-sm"
+            aria-label="Toggle team panel"
+          >☰</button>
 
           {/* Logo */}
-          <div className="flex items-center gap-3 flex-shrink-0">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-400/30 to-amber-600/20 border border-amber-400/20 flex items-center justify-center text-xl">
+          <div className="flex items-center gap-2.5 flex-shrink-0">
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-amber-400/30 to-amber-600/20 border border-amber-400/20 flex items-center justify-center text-lg">
               🏆
             </div>
-            <div>
+            <div className="hidden sm:block">
               <h1 className="text-[13px] font-semibold text-white leading-tight">World Cup 2026 Predictor</h1>
               <p className="text-[10px] text-white/35">Predict the path. Share your champion.</p>
             </div>
           </div>
 
-          {/* Legend — centred */}
-          <div className="flex-1 flex items-center justify-center gap-5">
+          {/* Legend — hidden on small mobile, centered on md+ */}
+          <div className="hidden md:flex flex-1 items-center justify-center gap-4">
             <div className="flex items-center gap-1.5">
               <span className="w-2.5 h-2.5 rounded-full bg-blue-400 shadow-[0_0_5px_rgba(96,165,250,0.7)]" />
               <span className="text-[11px] text-white/50">Your pick</span>
@@ -261,73 +308,100 @@ export default function BracketPage() {
           </div>
 
           {/* Controls */}
-          <div className="flex items-center gap-2 flex-shrink-0">
+          <div className="flex items-center gap-2 flex-shrink-0 ml-auto">
             <LanguageSwitcher />
             <button onClick={handleReset}
-              className="flex items-center gap-1.5 text-[11px] px-3 py-1.5 rounded-lg border border-white/[0.08] text-white/40 hover:text-white/70 hover:border-white/15 hover:bg-white/[0.04] transition-all">
+              className="hidden sm:flex items-center gap-1.5 text-[11px] px-3 py-1.5 rounded-lg border border-white/[0.08] text-white/40 hover:text-white/70 hover:border-white/15 hover:bg-white/[0.04] transition-all">
               ↺ {t("reset")}
             </button>
             <button onClick={handleShare}
-              className={`flex items-center gap-1.5 text-[11px] px-3 py-1.5 rounded-lg border font-medium transition-all ${
+              className={`hidden sm:flex items-center gap-1.5 text-[11px] px-3 py-1.5 rounded-lg border font-medium transition-all ${
                 copied
                   ? "border-emerald-400/40 text-emerald-300 bg-emerald-500/10"
                   : "border-white/[0.12] text-white/60 hover:border-white/25 hover:bg-white/[0.04]"
               }`}>
               🔗 {copied ? t("copied") : t("shareLink")}
             </button>
+            {/* Mobile: compact share button */}
+            <button onClick={handleShare}
+              className={`sm:hidden w-8 h-8 flex items-center justify-center rounded-lg border text-[13px] transition-all ${
+                copied ? "border-emerald-400/40 text-emerald-300" : "border-white/[0.12] text-white/50"
+              }`}>🔗</button>
             <button onClick={handleDownloadImage}
-              className="flex items-center gap-1.5 text-[11px] px-4 py-1.5 rounded-lg font-semibold bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-900/30 transition-all">
+              className="hidden sm:flex items-center gap-1.5 text-[11px] px-4 py-1.5 rounded-lg font-semibold bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-900/30 transition-all">
               ↓ {t("downloadImage")}
             </button>
+            {/* Mobile: icon-only download */}
+            <button onClick={handleDownloadImage}
+              className="sm:hidden w-8 h-8 flex items-center justify-center rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-[13px] transition-all">↓</button>
           </div>
         </div>
 
-        {/* Sub-bar: hint */}
-        <div className="px-5 py-1.5 border-t border-white/[0.04] text-[9px] text-white/20 tracking-wide">
+        {/* Sub-bar: hint — hidden on mobile to save space */}
+        <div className="hidden md:flex px-5 py-1.5 border-t border-white/[0.04] text-[9px] text-white/20 tracking-wide">
           ✦ {t("instructions")}
         </div>
       </header>
 
       {/* ── Body ────────────────────────────────────────────────────────── */}
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 overflow-hidden relative">
 
-        {/* Left panel */}
-        <div className="flex flex-col flex-shrink-0 bg-[#0d1220] border-r border-white/[0.07]" style={{ width: leftTab === "groups" ? 264 : 212 }}>
-          {/* Tab bar */}
-          <div className="flex border-b border-white/[0.07]">
-            {(["groups","teams"] as LeftTab[]).map(tab => (
-              <button key={tab} onClick={() => setLeftTab(tab)}
-                className={`flex-1 text-[10px] py-2.5 font-semibold uppercase tracking-[0.14em] transition-all ${
-                  leftTab === tab
-                    ? "text-white border-b-2 border-blue-500"
-                    : "text-white/25 hover:text-white/50"
-                }`}>
-                {t(tab as any)}
-              </button>
-            ))}
+        {/* Mobile overlay backdrop */}
+        {panelOpen && (
+          <div
+            className="lg:hidden fixed inset-0 bg-black/50 z-20"
+            onClick={() => setPanelOpen(false)}
+          />
+        )}
+
+        {/* Left panel — drawer on mobile/tablet, sidebar on desktop */}
+        <div className={`
+          flex-col bg-[#0d1220] border-r border-white/[0.07] z-30
+          fixed lg:relative inset-y-0 left-0 transition-transform duration-300
+          ${panelOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}
+          flex
+        `} style={{ width: leftTab === "groups" ? 264 : 212, top: 0, bottom: 0 }}>
+          {/* Mobile close button */}
+          <div className="lg:hidden flex items-center justify-between px-4 pt-3 pb-2 border-b border-white/[0.07] flex-shrink-0">
+            <span className="text-[11px] font-semibold text-white/60 uppercase tracking-wider">Teams Panel</span>
+            <button onClick={() => setPanelOpen(false)} className="text-white/40 hover:text-white/80 text-lg leading-none">✕</button>
           </div>
-
-          {leftTab === "groups" ? (
-            <GroupStandings
-              groups={groups}
-              loading={dataLoading}
-              filledSlots={filledSlots}
-              slotToTeam={slotToTeam}
-              onFillSlot={assignSlot}
-              onRemoveByTeamId={handleRemoveByTeamId}
-            />
-          ) : (
-            <TeamPanel
-              teams={panelTeams}
-              usedTeamIds={usedTeamIds}
-              onRemoveByTeamId={handleRemoveByTeamId}
-            />
-          )}
+          {panelContent}
         </div>
 
-        {/* Bracket */}
-        <div className="flex-1 overflow-auto p-5">
-          <div ref={bracketRef} className="inline-block rounded-2xl p-5" style={{ background: "#0b0f1a" }}>
+        {/* Bracket area */}
+        <div className="flex-1 overflow-auto p-3 sm:p-5">
+          {/* Mobile legend (shown only below md) */}
+          <div className="flex md:hidden items-center justify-center gap-4 mb-3 pb-3 border-b border-white/[0.06]">
+            <div className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-blue-400" />
+              <span className="text-[10px] text-white/45">Your pick</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full border-2 border-amber-400 bg-amber-400/15" />
+              <span className="text-[10px] text-white/45">Official</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[9px] font-bold text-emerald-400">✓</span>
+              <span className="text-[10px] text-white/45">Qualified</span>
+            </div>
+          </div>
+
+          {/* Mobile reset/share row */}
+          <div className="flex sm:hidden items-center gap-2 mb-3">
+            <button onClick={handleReset}
+              className="flex-1 text-[10px] py-2 rounded-lg border border-white/[0.08] text-white/40 hover:text-white/70 transition-all">
+              ↺ {t("reset")}
+            </button>
+            <button onClick={handleShare}
+              className={`flex-1 text-[10px] py-2 rounded-lg border font-medium transition-all ${
+                copied ? "border-emerald-400/40 text-emerald-300" : "border-white/[0.12] text-white/50"
+              }`}>
+              🔗 {copied ? t("copied") : t("shareLink")}
+            </button>
+          </div>
+
+          <div ref={bracketRef} className="inline-block rounded-2xl p-3 sm:p-5" style={{ background: "#0b0f1a" }}>
             <Bracket
               matches={resolvedMatches}
               predictions={predictions}

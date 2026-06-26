@@ -18,7 +18,6 @@ interface Props {
   loading: boolean;
   filledSlots: Set<string>;
   slotToTeam: Record<string, string>;
-  onFillSlot: (slotLabel: string, teamId: string) => void;
   onRemoveByTeamId: (teamId: string) => void;
 }
 
@@ -29,7 +28,7 @@ const POS_BADGE: Record<number, string> = {
   4: "bg-transparent text-white/15 border-white/5",
 };
 
-export default function GroupStandings({ groups, loading, filledSlots, slotToTeam, onFillSlot, onRemoveByTeamId }: Props) {
+export default function GroupStandings({ groups, loading, filledSlots, slotToTeam, onRemoveByTeamId }: Props) {
   const { t, locale } = useLocale();
   // Default: first 4 groups expanded
   const [expanded, setExpanded] = useState<Set<string>>(new Set(["A","B","C","D"]));
@@ -39,7 +38,7 @@ export default function GroupStandings({ groups, loading, filledSlots, slotToTea
   const visible = showAll ? groups : groups.slice(0, 6);
 
   function toggle(id: string) {
-    setExpanded(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+    setExpanded(prev => { const n = new Set(prev); if (n.has(id)) { n.delete(id); } else { n.add(id); } return n; });
   }
 
   function handlePanelDrop(e: React.DragEvent) {
@@ -116,12 +115,12 @@ export default function GroupStandings({ groups, loading, filledSlots, slotToTea
                             e.dataTransfer.setData("application/json", JSON.stringify({ teamId: team.tla, slotLabel }));
                             e.dataTransfer.effectAllowed = "copy";
                           } : e => e.preventDefault()}
-                          onClick={() => draggable && onFillSlot(slotLabel, team.tla)}
+                          onClick={undefined}
                           className={`text-[10px] select-none transition-colors
-                            ${draggable ? "hover:bg-white/[0.035] cursor-pointer" : "cursor-default"}
+                            ${draggable ? "hover:bg-white/[0.025] cursor-grab active:cursor-grabbing" : "cursor-default"}
                             ${isFilled ? "opacity-35" : !canAdvance ? "opacity-20" : ""}
                           `}
-                          title={!canAdvance ? "Eliminated" : isFilled ? t("alreadyFilled") : t("clickToFill")}
+                          title={!canAdvance ? "Eliminated" : isFilled ? t("alreadyFilled") : "Drag to a bracket slot"}
                         >
                           {/* Position badge */}
                           <td className="pl-4 pr-2 py-1.5 w-8">

@@ -22,7 +22,7 @@ export function encodePredictions(data: unknown): string {
   return btoa(JSON.stringify(data));
 }
 
-export function decodePredictions(encoded: string): any {
+export function decodePredictions(encoded: string): Record<string, unknown> {
   try { return JSON.parse(atob(encoded)); }
   catch { return {}; }
 }
@@ -41,8 +41,9 @@ export function resolveTeam(
     if (!match) return { id: label, name: label, isKnown: false };
     const winnerId = liveResults[matchId] ?? predictions[matchId];
     if (winnerId) {
-      const t = match.home.id === winnerId ? match.home : match.away;
-      return { ...t, isKnown: true };
+      if (match.home.id === winnerId) return { ...match.home, isKnown: true };
+      if (match.away.id === winnerId) return { ...match.away, isKnown: true };
+      // Neither slot matches yet — slots are unresolved placeholders; multi-pass will retry
     }
     return { id: label, name: label, isKnown: false };
   }
@@ -54,8 +55,9 @@ export function resolveTeam(
     if (!match) return { id: label, name: label, isKnown: false };
     const winnerId = liveResults[matchId] ?? predictions[matchId];
     if (winnerId) {
-      const t = match.home.id === winnerId ? match.away : match.home;
-      return { ...t, isKnown: true };
+      if (match.home.id === winnerId) return { ...match.away, isKnown: true };
+      if (match.away.id === winnerId) return { ...match.home, isKnown: true };
+      // Neither slot matches yet — multi-pass will retry
     }
     return { id: label, name: label, isKnown: false };
   }
@@ -65,18 +67,24 @@ export function resolveTeam(
 
 // Build fully resolved match list.
 // baseMatches: initial matches already patched with slot assignments (from BracketPage)
+// Multiple passes are needed: W90 in QF depends on M90 whose slots (W73, W75) are
+// only resolved in a prior pass. 6 passes covers R32→R16→QF→SF→Final depth.
 export function buildResolvedMatches(
   predictions: Predictions,
   liveResults: Record<string, string>,
   baseMatches: Match[] = INITIAL_MATCHES
 ): Match[] {
-  return baseMatches.map((m) => ({
-    ...m,
-    home: m.home.isKnown
-      ? m.home
-      : resolveTeam(m.home.id, baseMatches, predictions, liveResults),
-    away: m.away.isKnown
-      ? m.away
-      : resolveTeam(m.away.id, baseMatches, predictions, liveResults),
-  }));
+  let resolved = baseMatches;
+  for (let pass = 0; pass < 6; pass++) {
+    resolved = resolved.map((m) => ({
+      ...m,
+      home: m.home.isKnown
+        ? m.home
+        : resolveTeam(m.home.id, resolved, predictions, liveResults),
+      away: m.away.isKnown
+        ? m.away
+        : resolveTeam(m.away.id, resolved, predictions, liveResults),
+    }));
+  }
+  return resolved;
 }

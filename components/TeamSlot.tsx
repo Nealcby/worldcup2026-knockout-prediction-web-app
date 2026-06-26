@@ -67,7 +67,7 @@ export default function TeamSlot({
         onDragLeave={() => onDragOver?.(false)}
         onDrop={handleDrop}
         className={clsx(
-          "flex items-center gap-2 px-2 h-[28px] text-[11px] font-medium flex-1 text-left transition-all duration-100",
+          "flex items-center gap-2 px-2 h-[28px] text-[11px] font-medium flex-1 min-w-0 overflow-hidden text-left transition-all duration-100",
           removable && "pr-6",
 
           // ── User pick winner (blue)
