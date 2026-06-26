@@ -78,8 +78,8 @@ export default function BracketPage() {
       const decoded = decodePredictions(shared);
       // Batch both state updates in a single tick to avoid cascading renders
       setTimeout(() => {
-        setPredictions(decoded.preds ?? decoded);
-        setSlots(decoded.slots ?? {});
+        setPredictions((decoded.preds ?? decoded) as Predictions);
+        setSlots((decoded.slots ?? {}) as SlotAssignments);
       }, 0);
     } else {
       setTimeout(() => {
