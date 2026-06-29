@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Match, Predictions } from "@/lib/types";
 import { INITIAL_MATCHES } from "@/lib/bracketData";
 import { useLocale } from "@/lib/localeContext";
@@ -14,6 +14,16 @@ interface Props {
   onPick: (matchId: string, teamId: string) => void;
   onDropTeam: (matchId: string, slot: "home" | "away", teamId: string) => void;
   onRemoveSlot: (matchId: string, slot: "home" | "away") => void;
+}
+
+/** Returns true if the match has already started (EDT = UTC−4). */
+function hasMatchStarted(dateStr?: string, timeStr?: string): boolean {
+  if (!dateStr || !timeStr) return false;
+  const [mm, dd, yyyy] = dateStr.split("/").map(Number);
+  const [hh, mi] = timeStr.split(":").map(Number);
+  if (!yyyy || isNaN(hh)) return false;
+  const startMs = Date.UTC(yyyy, mm - 1, dd, hh + 4, mi); // EDT → UTC
+  return Date.now() >= startMs + 4 * 3_600_000; // show only 4h after kickoff
 }
 
 export default function MatchCard({ match, predictions, liveResults, onPick, onDropTeam, onRemoveSlot }: Props) {
@@ -48,14 +58,69 @@ export default function MatchCard({ match, predictions, liveResults, onPick, onD
     name: match.away.isKnown ? getTeamName(match.away.id, locale, match.away.name) : match.away.name,
   };
 
-  return (
-    <div className="bg-[#141927] border border-white/[0.08] rounded-xl overflow-hidden">
-      {/* Date/time */}
+  const showWatch = hasMatchStarted(match.date, match.time);
+
+  // YouTube highlight URL — fetched from server-side API (key stays secret).
+  // Falls back to a YouTube search URL so the button always appears after 4h.
+  const homeName = homeTeam.name || match.home.id;
+  const awayName = awayTeam.name || match.away.id;
+
+  // Fallback: YouTube search for the highlight if the specific video can't be found
+  const ytSearchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(
+    `${homeName} ${awayName} Full Highlights FIFA World Cup 2026`
+  )}`;
+
+  // exactVideoUrl is set once the API finds a specific TSN video.
+  // Until then the button falls back to ytSearchUrl so it's always visible.
+  const [exactVideoUrl, setExactVideoUrl] = useState<string | null>(null);
+  const fetchedRef = useRef(false);
+  useEffect(() => {
+    if (!showWatch || fetchedRef.current) return;
+    if (!match.home.isKnown || !match.away.isKnown) return;
+    fetchedRef.current = true;
+    const qs = new URLSearchParams({
+      home: homeName,
+      away: awayName,
+      date: match.date ?? "",
+      time: match.time ?? "",
+    });
+    fetch(`/api/yt-highlight?${qs}`)
+      .then(r => r.json())
+      .then(d => { if (d.url) setExactVideoUrl(d.url); })
+      .catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showWatch]);
+
+  // Derive the URL to use: specific video if found, else YouTube search
+  const highlightUrl = showWatch ? (exactVideoUrl ?? ytSearchUrl) : null;
+
+return (
+    <div className="border border-white/[0.08] rounded-xl overflow-hidden transition-shadow"
+      style={{ background: "var(--bg-card)", boxShadow: "0 2px 8px var(--border-subtle)" }}>
+      {/* Date/time + watch button */}
       {match.date && (
         <div className="flex items-center gap-1 px-2.5 pt-2 pb-0.5">
           <span className="text-[8px] text-white/25 uppercase tracking-wide">
             {match.date}{match.time ? ` – ${match.time}` : ""}
           </span>
+          {match.time && (
+            <span className="text-[7px] text-white/15 uppercase tracking-wider ml-0.5">ET</span>
+          )}
+          {showWatch && highlightUrl && (
+            <a
+              href={highlightUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              title={`Watch highlights: ${homeTeam.name || match.home.id} vs ${awayTeam.name || match.away.id}`}
+              className="ml-auto flex-shrink-0 opacity-70 hover:opacity-100 hover:scale-110 transition-all duration-150 inline-flex"
+              onClick={e => e.stopPropagation()}
+            >
+              <svg width="20" height="14" viewBox="0 0 20 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect width="20" height="14" rx="3.5" fill="#FF0000" />
+                <polygon points="8,3.5 8,10.5 14,7" fill="white" />
+              </svg>
+            </a>
+          )}
         </div>
       )}
 

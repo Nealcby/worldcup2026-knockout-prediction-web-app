@@ -2,6 +2,7 @@
 
 import { Match, Predictions } from "@/lib/types";
 import MatchCard from "./MatchCard";
+import LiveMatchTV from "./LiveMatchTV";
 import { useLocale } from "@/lib/localeContext";
 
 interface Props {
@@ -13,8 +14,9 @@ interface Props {
   onRemoveSlot: (matchId: string, slot: "home" | "away") => void;
 }
 
-const ROW_H = 48;   // 2 rows per match = 96px, card content ~94px
-const HEADER_H = 64; // tall enough for trophy icon + round label + date range
+const ROW_H = 48;    // 2 rows per match = 96px, card content ~94px
+const HEADER_H = 64; // trophy icon + round label + date range
+const TV_ROWS = 2;   // small top buffer so antennas have space to peek above headers
 
 // ── 17-column grid: 9 match cols + 8 arrow cols between them ─────────────────
 // Old col:  1   2   3   4   5   6   7   8   9
@@ -31,80 +33,81 @@ const COL_WIDTHS = [
   ARROW_W, MATCH_W, ARROW_W, MATCH_W, ARROW_W, MATCH_W, ARROW_W, MATCH_W,
 ];
 
+// TV_ROWS shifts all row positions down so the TV zone fits above the bracket
+const R = (r: number) => r + TV_ROWS; // shift a 1-based row index by TV_ROWS
+
 const GRID: Record<string, { col: number; rs: number; re: number }> = {
   // Left R32
-  M74:  { col:C[1], rs:2,  re:4  },
-  M77:  { col:C[1], rs:4,  re:6  },
-  M73:  { col:C[1], rs:6,  re:8  },
-  M75:  { col:C[1], rs:8,  re:10 },
-  M83:  { col:C[1], rs:10, re:12 },
-  M84:  { col:C[1], rs:12, re:14 },
-  M81:  { col:C[1], rs:14, re:16 },
-  M82:  { col:C[1], rs:16, re:18 },
+  M74:  { col:C[1], rs:R(2),  re:R(4)  },
+  M77:  { col:C[1], rs:R(4),  re:R(6)  },
+  M73:  { col:C[1], rs:R(6),  re:R(8)  },
+  M75:  { col:C[1], rs:R(8),  re:R(10) },
+  M83:  { col:C[1], rs:R(10), re:R(12) },
+  M84:  { col:C[1], rs:R(12), re:R(14) },
+  M81:  { col:C[1], rs:R(14), re:R(16) },
+  M82:  { col:C[1], rs:R(16), re:R(18) },
   // Left R16
-  M89:  { col:C[2], rs:3,  re:5  },
-  M90:  { col:C[2], rs:7,  re:9  },
-  M93:  { col:C[2], rs:11, re:13 },
-  M94:  { col:C[2], rs:15, re:17 },
+  M89:  { col:C[2], rs:R(3),  re:R(5)  },
+  M90:  { col:C[2], rs:R(7),  re:R(9)  },
+  M93:  { col:C[2], rs:R(11), re:R(13) },
+  M94:  { col:C[2], rs:R(15), re:R(17) },
   // Left QF
-  M97:  { col:C[3], rs:5,  re:7  },
-  M98:  { col:C[3], rs:13, re:15 },
+  M97:  { col:C[3], rs:R(5),  re:R(7)  },
+  M98:  { col:C[3], rs:R(13), re:R(15) },
   // Left SF
-  M101: { col:C[4], rs:9,  re:11 },
+  M101: { col:C[4], rs:R(9),  re:R(11) },
   // Final + 3rd
-  M104: { col:C[5], rs:7,  re:9  },
-  M103: { col:C[5], rs:11, re:13 },
+  M104: { col:C[5], rs:R(7),  re:R(9)  },
+  M103: { col:C[5], rs:R(11), re:R(13) },
   // Right SF
-  M102: { col:C[6], rs:9,  re:11 },
+  M102: { col:C[6], rs:R(9),  re:R(11) },
   // Right QF
-  M99:  { col:C[7], rs:5,  re:7  },
-  M100: { col:C[7], rs:13, re:15 },
+  M99:  { col:C[7], rs:R(5),  re:R(7)  },
+  M100: { col:C[7], rs:R(13), re:R(15) },
   // Right R16
-  M91:  { col:C[8], rs:3,  re:5  },
-  M92:  { col:C[8], rs:7,  re:9  },
-  M95:  { col:C[8], rs:11, re:13 },
-  M96:  { col:C[8], rs:15, re:17 },
+  M91:  { col:C[8], rs:R(3),  re:R(5)  },
+  M92:  { col:C[8], rs:R(7),  re:R(9)  },
+  M95:  { col:C[8], rs:R(11), re:R(13) },
+  M96:  { col:C[8], rs:R(15), re:R(17) },
   // Right R32
-  M76:  { col:C[9], rs:2,  re:4  },
-  M78:  { col:C[9], rs:4,  re:6  },
-  M79:  { col:C[9], rs:6,  re:8  },
-  M80:  { col:C[9], rs:8,  re:10 },
-  M86:  { col:C[9], rs:10, re:12 },
-  M88:  { col:C[9], rs:12, re:14 },
-  M85:  { col:C[9], rs:14, re:16 },
-  M87:  { col:C[9], rs:16, re:18 },
+  M76:  { col:C[9], rs:R(2),  re:R(4)  },
+  M78:  { col:C[9], rs:R(4),  re:R(6)  },
+  M79:  { col:C[9], rs:R(6),  re:R(8)  },
+  M80:  { col:C[9], rs:R(8),  re:R(10) },
+  M86:  { col:C[9], rs:R(10), re:R(12) },
+  M88:  { col:C[9], rs:R(12), re:R(14) },
+  M85:  { col:C[9], rs:R(14), re:R(16) },
+  M87:  { col:C[9], rs:R(16), re:R(18) },
 };
 
-// Connector arrows between rounds
-// For left half: → arrows at the destination match position
-// For right half: ← arrows (displayed as "→" but pointing left via transform)
+// Connector arrows between rounds (rows shifted by TV_ROWS)
 const ARROWS: { col: number; rs: number; re: number; dir: "left"|"right" }[] = [
   // Left: R32 → R16
-  { col:2,  rs:3,  re:5,  dir:"right" },
-  { col:2,  rs:7,  re:9,  dir:"right" },
-  { col:2,  rs:11, re:13, dir:"right" },
-  { col:2,  rs:15, re:17, dir:"right" },
+  { col:2,  rs:R(3),  re:R(5),  dir:"right" },
+  { col:2,  rs:R(7),  re:R(9),  dir:"right" },
+  { col:2,  rs:R(11), re:R(13), dir:"right" },
+  { col:2,  rs:R(15), re:R(17), dir:"right" },
   // Left: R16 → QF
-  { col:4,  rs:5,  re:7,  dir:"right" },
-  { col:4,  rs:13, re:15, dir:"right" },
+  { col:4,  rs:R(5),  re:R(7),  dir:"right" },
+  { col:4,  rs:R(13), re:R(15), dir:"right" },
   // Left: QF → SF
-  { col:6,  rs:9,  re:11, dir:"right" },
+  { col:6,  rs:R(9),  re:R(11), dir:"right" },
   // Left: SF → Final & 3rd
-  { col:8,  rs:7,  re:9,  dir:"right" },
-  { col:8,  rs:11, re:13, dir:"right" },
+  { col:8,  rs:R(7),  re:R(9),  dir:"right" },
+  { col:8,  rs:R(11), re:R(13), dir:"right" },
   // Right: SF → Final & 3rd
-  { col:10, rs:7,  re:9,  dir:"left"  },
-  { col:10, rs:11, re:13, dir:"left"  },
+  { col:10, rs:R(7),  re:R(9),  dir:"left"  },
+  { col:10, rs:R(11), re:R(13), dir:"left"  },
   // Right: QF → SF
-  { col:12, rs:9,  re:11, dir:"left"  },
+  { col:12, rs:R(9),  re:R(11), dir:"left"  },
   // Right: R16 → QF
-  { col:14, rs:5,  re:7,  dir:"left"  },
-  { col:14, rs:13, re:15, dir:"left"  },
+  { col:14, rs:R(5),  re:R(7),  dir:"left"  },
+  { col:14, rs:R(13), re:R(15), dir:"left"  },
   // Right: R32 → R16
-  { col:16, rs:3,  re:5,  dir:"left"  },
-  { col:16, rs:7,  re:9,  dir:"left"  },
-  { col:16, rs:11, re:13, dir:"left"  },
-  { col:16, rs:15, re:17, dir:"left"  },
+  { col:16, rs:R(3),  re:R(5),  dir:"left"  },
+  { col:16, rs:R(7),  re:R(9),  dir:"left"  },
+  { col:16, rs:R(11), re:R(13), dir:"left"  },
+  { col:16, rs:R(15), re:R(17), dir:"left"  },
 ];
 
 // Round labels: col number → { label key, dates }
@@ -124,20 +127,30 @@ export default function Bracket({ matches, predictions, liveResults, onPick, onD
   const { t } = useLocale();
 
   const totalW = COL_WIDTHS.slice(1).reduce((a, b) => a + b, 0);
-  const totalH = HEADER_H + ROW_H * 16;
+  const totalH = HEADER_H + ROW_H * (16 + TV_ROWS);
 
   const gridTemplateColumns = COL_WIDTHS.slice(1).map(w => `${w}px`).join(" ");
-  const gridTemplateRows = `${HEADER_H}px repeat(16, ${ROW_H}px)`;
+  // TV_ROWS extra rows on top, then the header row, then 16 match rows
+  const gridTemplateRows = `repeat(${TV_ROWS}, ${ROW_H}px) ${HEADER_H}px repeat(16, ${ROW_H}px)`;
 
   return (
     <div style={{ display:"grid", gridTemplateColumns, gridTemplateRows, width:totalW, height:totalH }}>
+
+      {/* ── Live TV widget
+           top    = top edge of top R32 slot  → row R(2)
+           bottom = bottom edge of top QF slot → row R(7)
+           left   = left edge of left SF slot  → col C[4]=7
+           right  = right edge of right SF slot → col C[6]+1=12  ── */}
+      <div style={{ gridColumn:`${C[4]}/${C[6]+1}`, gridRow:`${R(2)}/${R(7)}`, zIndex:0, position:"relative" }}>
+        <LiveMatchTV matches={matches} />
+      </div>
 
       {/* Column headers */}
       {Object.entries(COL_HEADERS).map(([colStr, { key, dates }]) => {
         const col = parseInt(colStr);
         const isFinal = col === 9;
         return (
-          <div key={`hdr-${col}`} style={{ gridColumn:col, gridRow:1 }}
+          <div key={`hdr-${col}`} style={{ gridColumn:col, gridRow:TV_ROWS + 1 }}
             className="flex flex-col items-center justify-end pb-2.5 gap-0.5">
             {/* Trophy lives in the header for the Final column — keeps the card cell unobstructed */}
             {isFinal && <span className="text-lg mb-0.5">🏆</span>}
@@ -157,7 +170,7 @@ export default function Bracket({ matches, predictions, liveResults, onPick, onD
       {/* Connector arrows */}
       {ARROWS.map((a, i) => (
         <div key={`arr-${i}`}
-          style={{ gridColumn:a.col, gridRow:`${a.rs}/${a.re}` }}
+          style={{ gridColumn:a.col, gridRow:`${a.rs}/${a.re}`, position:"relative", zIndex:1 }}
           className="flex items-center justify-center">
           <span className={`text-white/15 text-[11px] ${a.dir === "left" ? "rotate-180" : ""}`}>›</span>
         </div>
@@ -171,7 +184,7 @@ export default function Bracket({ matches, predictions, liveResults, onPick, onD
         const is3rd   = matchId === "M103";
         return (
           <div key={matchId}
-            style={{ gridColumn:pos.col, gridRow:`${pos.rs}/${pos.re}`, display:"flex", flexDirection:"column", justifyContent:"center", padding:"3px 0" }}>
+            style={{ gridColumn:pos.col, gridRow:`${pos.rs}/${pos.re}`, display:"flex", flexDirection:"column", justifyContent:"center", padding:"3px 0", position:"relative", zIndex:1 }}>
             <div className={`rounded-xl overflow-hidden ${
               isFinal ? "ring-1 ring-amber-400/40 shadow-[0_0_20px_rgba(251,191,36,0.1)]" :
               is3rd   ? "ring-1 ring-purple-400/25" : ""

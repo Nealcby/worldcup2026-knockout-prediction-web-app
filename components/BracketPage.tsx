@@ -5,6 +5,7 @@ import Bracket from "./Bracket";
 import TeamPanel, { PanelTeam } from "./TeamPanel";
 import GroupStandings, { LiveGroup } from "./GroupStandings";
 import LanguageSwitcher from "./LanguageSwitcher";
+import { useTheme } from "@/lib/themeContext";
 import { Predictions, TeamInfo } from "@/lib/types";
 import { useLocale } from "@/lib/localeContext";
 import {
@@ -59,16 +60,20 @@ type LeftTab = "groups" | "teams";
 
 export default function BracketPage() {
   const { t } = useLocale();
+  const { theme, toggle: toggleTheme } = useTheme();
   const [predictions, setPredictions] = useState<Predictions>({});
   const [slots, setSlots] = useState<SlotAssignments>({});
   const [leftTab, setLeftTab] = useState<LeftTab>("groups");
   const [copied, setCopied] = useState(false);
-  const [panelOpen, setPanelOpen] = useState(false); // mobile drawer
+  const [panelOpen, setPanelOpen] = useState(false);     // mobile drawer
+  const [panelCollapsed, setPanelCollapsed] = useState(false); // desktop collapse
   const bracketRef = useRef<HTMLDivElement>(null);
 
   const [groups, setGroups] = useState<LiveGroup[]>([]);
   const [apiSlotMap, setApiSlotMap] = useState<Record<string, string>>({});
   const [teamMap, setTeamMap] = useState<Record<string, { name: string; flag: string }>>({});
+  const [matchSchedule, setMatchSchedule] = useState<Record<string, { date: string; time: string }>>({});
+  const [liveResultsById, setLiveResultsById] = useState<Record<string, string>>({});
   const [dataLoading, setDataLoading] = useState(true);
 
   useEffect(() => {
@@ -101,6 +106,8 @@ export default function BracketPage() {
           setGroups(data.groups);
           setTeamMap(map);
           setApiSlotMap(data.slotMap ?? {});
+          setMatchSchedule(data.matchSchedule ?? {});
+          setLiveResultsById(data.liveResultsById ?? {});
         }
       })
       .catch(() => {})
@@ -117,6 +124,8 @@ export default function BracketPage() {
             for (const team of g.teams) map[team.tla] = { name: team.name, flag: team.flag };
           setTeamMap(map);
           setApiSlotMap(data.slotMap ?? {});
+          setMatchSchedule(data.matchSchedule ?? {});
+          setLiveResultsById(data.liveResultsById ?? {});
         }
       }).catch(() => {});
     }, 5 * 60 * 1000);
@@ -218,7 +227,9 @@ export default function BracketPage() {
   }
 
   const slotsApplied = applySlots(slots, apiSlotMap, teamMap);
-  const resolvedMatches = buildResolvedMatches(predictions, {}, slotsApplied);
+  // Apply API-accurate EDT times over bracketData fallback times
+  const resolvedMatches = buildResolvedMatches(predictions, liveResultsById, slotsApplied)
+    .map(m => matchSchedule[m.id] ? { ...m, ...matchSchedule[m.id] } : m);
 
   const usedTeamIds = new Set<string>();
   resolvedMatches.forEach(m => {
@@ -231,6 +242,29 @@ export default function BracketPage() {
   const panelTeams: PanelTeam[] = Object.entries(teamMap).map(([tla, info]) => ({
     id: tla, name: info.name, flag: info.flag,
   }));
+
+  // Build complete eliminated set:
+  // 1. Position-4 teams (group stage eliminated)
+  const pos4 = groups.flatMap(g => g.teams.filter(t => t.position === 4).map(t => t.tla));
+
+  // 2. Position-3 teams whose group is complete (3+ MP) but NOT in the best-8 third-place slots
+  const qualifiedThirds = new Set(
+    Object.entries(apiSlotMap).filter(([k]) => k.startsWith("3")).map(([, v]) => v)
+  );
+  const eliminatedThirds = groups.flatMap(g =>
+    g.teams.filter(t => t.position === 3 && t.mp >= 3 && !qualifiedThirds.has(t.tla)).map(t => t.tla)
+  );
+
+  // 3. Losers of completed R32/R16/QF/SF matches (from API live results)
+  const eliminatedByResult: string[] = [];
+  resolvedMatches.forEach(m => {
+    const winner = liveResultsById[m.id];
+    if (!winner) return;
+    const loserTeam = m.home.id === winner ? m.away : m.home;
+    if (loserTeam.isKnown && loserTeam.id !== winner) eliminatedByResult.push(loserTeam.id);
+  });
+
+  const eliminatedTeamIds = new Set<string>([...pos4, ...eliminatedThirds, ...eliminatedByResult]);
 
   const panelContent = (
     <div className="flex flex-col h-full overflow-hidden">
@@ -253,13 +287,14 @@ export default function BracketPage() {
           loading={dataLoading}
           filledSlots={filledSlots}
           slotToTeam={slotToTeam}
-
+          eliminatedTeamIds={eliminatedTeamIds}
           onRemoveByTeamId={handleRemoveByTeamId}
         />
       ) : (
         <TeamPanel
           teams={panelTeams}
           usedTeamIds={usedTeamIds}
+          eliminatedTeamIds={eliminatedTeamIds}
           onRemoveByTeamId={handleRemoveByTeamId}
         />
       )}
@@ -267,10 +302,10 @@ export default function BracketPage() {
   );
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#0b0f1a] text-white">
+    <div className="min-h-screen flex flex-col text-white" style={{ background: "var(--bg-page)", color: "var(--text-primary)" }}>
 
       {/* ── Header ──────────────────────────────────────────────────────── */}
-      <header className="flex-shrink-0 bg-[#0f1420] border-b border-white/[0.07]">
+      <header className="flex-shrink-0 border-b border-white/[0.07]" style={{ background: "var(--bg-header)" }}>
         <div className="flex items-center px-4 py-3 gap-3">
 
           {/* Mobile panel toggle */}
@@ -309,6 +344,15 @@ export default function BracketPage() {
 
           {/* Controls */}
           <div className="flex items-center gap-2 flex-shrink-0 ml-auto">
+            {/* Dark / Light toggle */}
+            <button
+              onClick={toggleTheme}
+              className="w-8 h-8 flex items-center justify-center rounded-lg border border-white/[0.1] text-white/60 hover:text-white hover:bg-white/[0.08] transition-all text-base"
+              title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+              aria-label="Toggle theme"
+            >
+              {theme === "dark" ? "🌙" : "☀️"}
+            </button>
             <LanguageSwitcher />
             <button onClick={handleReset}
               className="hidden sm:flex items-center gap-1.5 text-[11px] px-3 py-1.5 rounded-lg border border-white/[0.08] text-white/40 hover:text-white/70 hover:border-white/15 hover:bg-white/[0.04] transition-all">
@@ -344,7 +388,7 @@ export default function BracketPage() {
       </header>
 
       {/* ── Body ────────────────────────────────────────────────────────── */}
-      <div className="flex flex-1 overflow-hidden relative">
+      <div className="flex flex-1 overflow-hidden relative" data-theme-content>
 
         {/* Mobile overlay backdrop */}
         {panelOpen && (
@@ -354,13 +398,16 @@ export default function BracketPage() {
           />
         )}
 
-        {/* Left panel — drawer on mobile/tablet, sidebar on desktop */}
+        {/* Left panel — drawer on mobile/tablet, collapsible sidebar on desktop */}
         <div className={`
-          flex-col bg-[#0d1220] border-r border-white/[0.07] z-30
-          fixed lg:relative inset-y-0 left-0 transition-transform duration-300
+          flex-col border-r border-white/[0.07] z-30
+          fixed lg:relative inset-y-0 left-0 transition-all duration-300 ease-in-out overflow-hidden
           ${panelOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}
-          flex
-        `} style={{ width: leftTab === "groups" ? 264 : 212, top: 0, bottom: 0 }}>
+          flex flex-shrink-0
+        `} style={{ background: "var(--bg-panel)",
+          width: panelCollapsed ? 0 : (leftTab === "groups" ? 264 : 212),
+          top: 0, bottom: 0,
+        }}>
           {/* Mobile close button */}
           <div className="lg:hidden flex items-center justify-between px-4 pt-3 pb-2 border-b border-white/[0.07] flex-shrink-0">
             <span className="text-[11px] font-semibold text-white/60 uppercase tracking-wider">Teams Panel</span>
@@ -369,8 +416,18 @@ export default function BracketPage() {
           {panelContent}
         </div>
 
+        {/* Desktop collapse toggle — sits on the border between panel and bracket */}
+        <button
+          onClick={() => setPanelCollapsed(v => !v)}
+          className="hidden lg:flex flex-shrink-0 self-start mt-3 w-5 items-center justify-center rounded-r-md border border-l-0 border-white/[0.08] text-white/25 hover:text-white/70 hover:bg-white/[0.05] transition-all z-10"
+          style={{ background: "var(--bg-panel)", height: 48 }}
+          title={panelCollapsed ? "Expand panel" : "Collapse panel"}
+        >
+          <span className="text-[10px]">{panelCollapsed ? "›" : "‹"}</span>
+        </button>
+
         {/* Bracket area */}
-        <div className="flex-1 overflow-auto p-3 sm:p-5">
+        <div className="flex-1 overflow-auto p-3 sm:p-5" style={{ background: "var(--bg-page)" }}>
           {/* Mobile legend (shown only below md) */}
           <div className="flex md:hidden items-center justify-center gap-4 mb-3 pb-3 border-b border-white/[0.06]">
             <div className="flex items-center gap-1.5">
@@ -401,11 +458,11 @@ export default function BracketPage() {
             </button>
           </div>
 
-          <div ref={bracketRef} className="inline-block rounded-2xl p-3 sm:p-5" style={{ background: "#0b0f1a" }}>
+          <div ref={bracketRef} className="inline-block rounded-2xl p-3 sm:p-5" style={{ background: "var(--bg-bracket)" }}>
             <Bracket
               matches={resolvedMatches}
               predictions={predictions}
-              liveResults={{}}
+              liveResults={liveResultsById}
               onPick={handlePick}
               onDropTeam={handleDropTeam}
               onRemoveSlot={handleRemoveSlot}

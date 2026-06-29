@@ -1,4 +1,16 @@
 import { NextResponse } from "next/server";
+import { INITIAL_MATCHES } from "@/lib/bracketData";
+
+/** Convert ISO UTC date string → { date: "MM/DD/YYYY", time: "HH:MM" } in EDT (UTC−4). */
+function utcToEdt(utcDate: string): { date: string; time: string } {
+  const d = new Date(utcDate);
+  const edt = new Date(d.getTime() - 4 * 3_600_000);
+  const mm = String(edt.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(edt.getUTCDate()).padStart(2, "0");
+  const hh = String(edt.getUTCHours()).padStart(2, "0");
+  const mi = String(edt.getUTCMinutes()).padStart(2, "0");
+  return { date: `${mm}/${dd}/${edt.getUTCFullYear()}`, time: `${hh}:${mi}` };
+}
 
 const API_KEY = process.env.FOOTBALL_DATA_API_KEY ?? "";
 const BASE = "https://api.football-data.org/v4";
@@ -82,20 +94,24 @@ export async function GET() {
 
     const slotMap: Record<string, string> = {}; // "1A" → "MEX"
 
-    const standings = (standingsJson.standings ?? []) as any[];
+    type ApiRow = { team?: { tla?: string; name?: string }; position: number; playedGames?: number; won?: number; draw?: number; lost?: number; goalsFor?: number; goalsAgainst?: number; points?: number };
+    type ApiStanding = { type: string; group?: string; table?: ApiRow[] };
+    type ApiMatch = { stage: string; status: string; utcDate?: string; homeTeam?: { tla?: string }; awayTeam?: { tla?: string }; score?: { winner?: string } };
+
+    const standings = (standingsJson.standings ?? []) as ApiStanding[];
     // API returns group as "Group A" (or legacy "GROUP_A") — handle both
     const groupStandings = standings.filter(
-      (s: any) => s.type === "TOTAL" && s.group &&
+      (s) => s.type === "TOTAL" && s.group &&
         (s.group.startsWith("Group ") || s.group.startsWith("GROUP_"))
     );
 
     for (const gs of groupStandings) {
-      const raw: string = gs.group;
+      const raw: string = gs.group!;
       // Extract single letter: "Group A" → "A", "GROUP_A" → "A"
       const groupLetter = raw.startsWith("Group ")
         ? raw.replace("Group ", "").trim()
         : raw.replace("GROUP_", "").trim();
-      const teams = (gs.table ?? []).map((row: any) => {
+      const teams = (gs.table ?? []).map((row) => {
         const tla: string = row.team?.tla ?? "UNK";
         return {
           id: tla,
@@ -117,9 +133,9 @@ export async function GET() {
 
       // Only auto-fill 1st/2nd when every team has played all 3 group games
       // (positions are final). Groups still in progress are left for user prediction.
-      const groupComplete = teams.every((t: any) => t.mp >= 3);
+      const groupComplete = teams.every((t) => t.mp >= 3);
       if (groupComplete) {
-        teams.forEach((t: any) => {
+        teams.forEach((t) => {
           if (t.position === 1) slotMap[`1${groupLetter}`] = t.tla;
           if (t.position === 2) slotMap[`2${groupLetter}`] = t.tla;
           // 3rd place slots are never auto-filled: user must predict which 8
@@ -129,43 +145,107 @@ export async function GET() {
     }
 
     // ── Process knockout match results ───────────────────────────────────
-    // football-data.org v4 stage codes for WC 2026
-    const STAGE_ROUNDS: Record<string, string> = {
-      LAST_32: "R32",
-      LAST_16: "R16",
-      QUARTER_FINALS: "QF",
-      SEMI_FINALS: "SF",
-      THIRD_PLACE: "3RD",
-      FINAL: "F",
+    const STAGE_ROUNDS: Record<string, boolean> = {
+      LAST_32: true, LAST_16: true, QUARTER_FINALS: true,
+      SEMI_FINALS: true, THIRD_PLACE: true, FINAL: true,
     };
 
-    const liveResults: Record<string, { homeTla: string; awayTla: string; winner: string; homeScore: number; awayScore: number }> = {};
-    const allMatches = (matchesJson.matches ?? []) as any[];
+    const allMatches = (matchesJson.matches ?? []) as ApiMatch[];
 
-    allMatches
-      .filter((m: any) => STAGE_ROUNDS[m.stage] && m.status === "FINISHED")
-      .forEach((m: any) => {
-        const key = `${STAGE_ROUNDS[m.stage]}_${m.homeTeam?.tla}_${m.awayTeam?.tla}`;
-        liveResults[key] = {
-          homeTla: m.homeTeam?.tla,
-          awayTla: m.awayTeam?.tla,
-          winner: m.score?.winner === "HOME_TEAM" ? m.homeTeam?.tla :
-                  m.score?.winner === "AWAY_TEAM" ? m.awayTeam?.tla : "",
-          homeScore: m.score?.fullTime?.home ?? 0,
-          awayScore: m.score?.fullTime?.away ?? 0,
-        };
-      });
+    // ── Detect 3rd-place slot assignments from Round of 32 API matches ──────
+    // Build reverse lookup: TLA → slot label (covers 1st/2nd place)
+    const tlaToSlot: Record<string, string> = {};
+    for (const [slot, tla] of Object.entries(slotMap)) tlaToSlot[tla] = slot;
+
+    const r32Matches = allMatches.filter((m) => m.stage === "LAST_32");
+    for (const apiMatch of r32Matches) {
+      const homeTla: string | undefined = apiMatch.homeTeam?.tla;
+      const awayTla: string | undefined = apiMatch.awayTeam?.tla;
+      if (!homeTla || !awayTla) continue;
+
+      const homeSlot = tlaToSlot[homeTla]; // e.g. "1E" if already in slotMap
+      const awaySlot = tlaToSlot[awayTla];
+
+      // Exactly one team is a confirmed 1st/2nd-placer → the other is 3rd-place
+      if (homeSlot && !awaySlot) {
+        // awayTla is the 3rd-place team — find which INITIAL_MATCH slot it belongs to
+        const initMatch = INITIAL_MATCHES.find(
+          m => m.home.id === homeSlot || m.away.id === homeSlot
+        );
+        if (initMatch) {
+          const thirdSlot = initMatch.home.id === homeSlot
+            ? initMatch.away.id
+            : initMatch.home.id;
+          if (thirdSlot.startsWith("3") && !slotMap[thirdSlot]) {
+            slotMap[thirdSlot] = awayTla;
+            tlaToSlot[awayTla] = thirdSlot;
+          }
+        }
+      } else if (awaySlot && !homeSlot) {
+        // homeTla is the 3rd-place team
+        const initMatch = INITIAL_MATCHES.find(
+          m => m.home.id === awaySlot || m.away.id === awaySlot
+        );
+        if (initMatch) {
+          const thirdSlot = initMatch.home.id === awaySlot
+            ? initMatch.away.id
+            : initMatch.home.id;
+          if (thirdSlot.startsWith("3") && !slotMap[thirdSlot]) {
+            slotMap[thirdSlot] = homeTla;
+            tlaToSlot[homeTla] = thirdSlot;
+          }
+        }
+      }
+    }
+
+    // ── Build matchSchedule (EDT times) and liveResultsById ──────────────
+    // For R32 matches we can identify bracketData match ID by team slot labels.
+    // tlaToSlot now includes 3rd-place assignments built above.
+    const matchSchedule: Record<string, { date: string; time: string }> = {};
+    const liveResultsById: Record<string, string> = {}; // bracketId → winner TLA
+
+    for (const apiMatch of allMatches) {
+      if (!STAGE_ROUNDS[apiMatch.stage]) continue;
+      const homeTla: string | undefined = apiMatch.homeTeam?.tla;
+      const awayTla: string | undefined = apiMatch.awayTeam?.tla;
+      if (!homeTla || !awayTla) continue;
+
+      const homeSlot = tlaToSlot[homeTla];
+      const awaySlot = tlaToSlot[awayTla];
+      if (!homeSlot || !awaySlot) continue;
+
+      // Find the bracketData match whose slots match these two teams
+      const bracketMatch = INITIAL_MATCHES.find(m =>
+        (m.home.id === homeSlot && m.away.id === awaySlot) ||
+        (m.home.id === awaySlot && m.away.id === homeSlot)
+      );
+      if (!bracketMatch) continue;
+
+      // Accurate EDT schedule time from API
+      if (apiMatch.utcDate) {
+        matchSchedule[bracketMatch.id] = utcToEdt(apiMatch.utcDate);
+      }
+
+      // Official result if match is finished
+      if (apiMatch.status === "FINISHED") {
+        const winner = apiMatch.score?.winner === "HOME_TEAM" ? homeTla
+                     : apiMatch.score?.winner === "AWAY_TEAM" ? awayTla
+                     : "";
+        if (winner) liveResultsById[bracketMatch.id] = winner;
+      }
+    }
 
     // Sort groups alphabetically
     groups.sort((a, b) => a.id.localeCompare(b.id));
 
-    const data = { groups, slotMap, liveResults };
+    const data = { groups, slotMap, matchSchedule, liveResultsById };
     cache = { ts: Date.now(), data };
     return NextResponse.json(data);
-  } catch (e: any) {
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "Unknown error";
     return NextResponse.json({
       groups: [], slotMap: {}, liveResults: {},
-      error: e.message ?? "Unknown error",
+      error: msg,
     });
   }
 }

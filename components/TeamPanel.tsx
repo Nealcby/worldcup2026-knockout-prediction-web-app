@@ -14,6 +14,7 @@ export type PanelTeam = {
 interface Props {
   teams: PanelTeam[];
   usedTeamIds: Set<string>;
+  eliminatedTeamIds: Set<string>;
   onRemoveByTeamId: (teamId: string) => void;
 }
 
@@ -27,7 +28,7 @@ const CONF_COLORS: Record<string, string> = {
   OFC:      "border-purple-400/40 text-purple-300 bg-purple-400/8",
 };
 
-export default function TeamPanel({ teams, usedTeamIds, onRemoveByTeamId }: Props) {
+export default function TeamPanel({ teams, usedTeamIds, eliminatedTeamIds, onRemoveByTeamId }: Props) {
   const { t, locale } = useLocale();
   const [search, setSearch] = useState("");
   const [activeConf, setActiveConf] = useState<string | null>(null);
@@ -41,8 +42,9 @@ export default function TeamPanel({ teams, usedTeamIds, onRemoveByTeamId }: Prop
     return matchSearch && matchConf;
   });
 
-  const available = filtered.filter(t => !usedTeamIds.has(t.id));
-  const placed = filtered.filter(t => usedTeamIds.has(t.id));
+  const available  = filtered.filter(t => !usedTeamIds.has(t.id) && !eliminatedTeamIds.has(t.id));
+  const eliminated = filtered.filter(t => !usedTeamIds.has(t.id) && eliminatedTeamIds.has(t.id));
+  const placed     = filtered.filter(t => usedTeamIds.has(t.id));
 
   function handlePanelDrop(e: React.DragEvent) {
     e.preventDefault();
@@ -118,7 +120,7 @@ export default function TeamPanel({ teams, usedTeamIds, onRemoveByTeamId }: Prop
 
       {/* Team list */}
       <div className="flex-1 overflow-y-auto px-2 py-2">
-        {available.length === 0 && placed.length === 0 && (
+        {available.length === 0 && placed.length === 0 && eliminated.length === 0 && (
           <div className="text-[10px] text-white/20 text-center py-6">—</div>
         )}
 
@@ -144,28 +146,51 @@ export default function TeamPanel({ teams, usedTeamIds, onRemoveByTeamId }: Prop
           })}
         </div>
 
-        {/* Placed teams (dimmed section) */}
+        {/* Placed teams */}
         {placed.length > 0 && (
           <>
-            {available.length > 0 && (
-              <div className="flex items-center gap-2 my-2 px-1">
-                <div className="h-px flex-1 bg-white/[0.04]" />
-                <span className="text-[8px] text-white/15 uppercase tracking-widest">Placed</span>
-                <div className="h-px flex-1 bg-white/[0.04]" />
-              </div>
-            )}
+            <div className="flex items-center gap-2 my-2 px-1">
+              <div className="h-px flex-1 bg-white/[0.04]" />
+              <span className="text-[8px] text-white/15 uppercase tracking-widest">Placed ✓</span>
+              <div className="h-px flex-1 bg-white/[0.04]" />
+            </div>
             <div className="space-y-0.5">
               {placed.map(team => {
                 const displayName = getTeamName(team.id, locale, team.name);
                 return (
-                  <div
-                    key={team.id}
+                  <div key={team.id}
                     className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] select-none opacity-30 cursor-not-allowed"
                     title={`${displayName} already placed`}
                   >
                     <span className="text-base leading-none flex-shrink-0">{team.flag}</span>
                     <span className="text-white/60 truncate flex-1">{displayName}</span>
-                    <span className="text-[9px] text-emerald-400/60 flex-shrink-0">✓</span>
+                    <span className="text-[11px] font-bold text-emerald-400 flex-shrink-0">✓</span>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+
+        {/* Eliminated teams — not draggable */}
+        {eliminated.length > 0 && (
+          <>
+            <div className="flex items-center gap-2 my-2 px-1">
+              <div className="h-px flex-1 bg-white/[0.04]" />
+              <span className="text-[8px] text-red-400/30 uppercase tracking-widest">Eliminated</span>
+              <div className="h-px flex-1 bg-white/[0.04]" />
+            </div>
+            <div className="space-y-0.5">
+              {eliminated.map(team => {
+                const displayName = getTeamName(team.id, locale, team.name);
+                return (
+                  <div key={team.id}
+                    draggable={false}
+                    className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] select-none opacity-20 cursor-not-allowed"
+                    title={`${displayName} eliminated`}
+                  >
+                    <span className="text-base leading-none flex-shrink-0 grayscale">{team.flag}</span>
+                    <span className="text-white/40 truncate flex-1 line-through decoration-white/20">{displayName}</span>
                   </div>
                 );
               })}

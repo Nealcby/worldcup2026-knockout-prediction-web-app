@@ -18,6 +18,7 @@ interface Props {
   loading: boolean;
   filledSlots: Set<string>;
   slotToTeam: Record<string, string>;
+  eliminatedTeamIds: Set<string>;
   onRemoveByTeamId: (teamId: string) => void;
 }
 
@@ -28,7 +29,7 @@ const POS_BADGE: Record<number, string> = {
   4: "bg-transparent text-white/15 border-white/5",
 };
 
-export default function GroupStandings({ groups, loading, filledSlots, slotToTeam, onRemoveByTeamId }: Props) {
+export default function GroupStandings({ groups, loading, filledSlots, slotToTeam, eliminatedTeamIds, onRemoveByTeamId }: Props) {
   const { t, locale } = useLocale();
   // Default: first 4 groups expanded
   const [expanded, setExpanded] = useState<Set<string>>(new Set(["A","B","C","D"]));
@@ -99,11 +100,12 @@ export default function GroupStandings({ groups, loading, filledSlots, slotToTea
                     {group.teams.map((team, idx) => {
                       const pos = idx + 1;
                       const canAdvance = pos <= 3;
+                      const isEliminated = eliminatedTeamIds.has(team.tla);
                       const slotLabel = pos === 1 ? `1${group.id}` : pos === 2 ? `2${group.id}` : `3${group.id}`;
                       const isFilled = canAdvance && (
                         filledSlots.has(slotLabel) || Object.values(slotToTeam).includes(team.tla)
                       );
-                      const draggable = canAdvance && !isFilled;
+                      const draggable = canAdvance && !isFilled && !isEliminated;
                       const gd = team.gf - team.ga;
                       const name = getTeamName(team.tla, locale, team.name);
 
@@ -118,9 +120,9 @@ export default function GroupStandings({ groups, loading, filledSlots, slotToTea
                           onClick={undefined}
                           className={`text-[10px] select-none transition-colors
                             ${draggable ? "hover:bg-white/[0.025] cursor-grab active:cursor-grabbing" : "cursor-default"}
-                            ${isFilled ? "opacity-35" : !canAdvance ? "opacity-20" : ""}
+                            ${isFilled ? "opacity-35" : isEliminated ? "opacity-20" : !canAdvance ? "opacity-20" : ""}
                           `}
-                          title={!canAdvance ? "Eliminated" : isFilled ? t("alreadyFilled") : "Drag to a bracket slot"}
+                          title={isEliminated ? "Eliminated" : !canAdvance ? "Eliminated" : isFilled ? t("alreadyFilled") : "Drag to a bracket slot"}
                         >
                           {/* Position badge */}
                           <td className="pl-4 pr-2 py-1.5 w-8">
@@ -132,8 +134,11 @@ export default function GroupStandings({ groups, loading, filledSlots, slotToTea
                           <td className="py-1.5 pr-1">
                             <div className="flex items-center gap-1.5">
                               <span className="text-sm leading-none">{team.flag}</span>
-                              <span className={`truncate ${isFilled ? "text-white/35" : pos <= 2 ? "text-white/80" : "text-white/55"}`}
-                                style={{ maxWidth: 90 }}>
+                              <span className={`truncate ${
+                                isEliminated ? "text-white/30 line-through decoration-white/20" :
+                                isFilled ? "text-white/35" :
+                                pos <= 2 ? "text-white/80" : "text-white/55"
+                              }`} style={{ maxWidth: 90 }}>
                                 {name}
                               </span>
                             </div>
@@ -149,7 +154,7 @@ export default function GroupStandings({ groups, loading, filledSlots, slotToTea
                           {/* Status icon */}
                           <td className="py-1.5 pr-3 w-5 text-right">
                             {isFilled
-                              ? <span className="text-emerald-400/60 text-[9px]">✓</span>
+                              ? <span className="text-emerald-400 text-[11px] font-bold">✓</span>
                               : draggable
                                 ? <span className="text-white/10 text-[9px] opacity-0 group-hover:opacity-100">→</span>
                                 : null

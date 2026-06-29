@@ -1,25 +1,34 @@
 @import "tailwindcss";
 
+/* ── Design tokens (dark defaults; ThemeProvider swaps these at runtime) ─── */
 :root {
-  --background: #07090f;
-  --foreground: #e2e8f0;
+  --bg-page:    #0b0f1a;
+  --bg-header:  #0f1420;
+  --bg-panel:   #0d1220;
+  --bg-card:    #141927;
+  --bg-bracket: #0b0f1a;
+
+  --text-primary:   rgba(255,255,255,0.88);
+  --text-secondary: rgba(255,255,255,0.45);
+  --text-muted:     rgba(255,255,255,0.22);
+
+  --border-subtle:  rgba(255,255,255,0.07);
+  --border-medium:  rgba(255,255,255,0.12);
+
+  --scrollbar-thumb: rgba(255,255,255,0.12);
+  --scrollbar-hover: rgba(255,255,255,0.22);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
+/* ── Base ─────────────────────────────────────────────────────────────────── */
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  background: var(--bg-page);
+  color: var(--text-primary);
+  font-family: system-ui, -apple-system, Arial, Helvetica, sans-serif;
+  transition: background 0.25s, color 0.25s;
 }
 
-/* Scrollbar */
-::-webkit-scrollbar { width: 4px; height: 4px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 999px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+/* ── Scrollbar ────────────────────────────────────────────────────────────── */
+::-webkit-scrollbar          { width: 4px; height: 4px; }
+::-webkit-scrollbar-track    { background: transparent; }
+::-webkit-scrollbar-thumb    { background: var(--scrollbar-thumb); border-radius: 999px; }
+::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-hover); }
