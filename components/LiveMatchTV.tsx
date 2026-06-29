@@ -125,14 +125,17 @@ export default function LiveMatchTV({ matches }: Props) {
         </div>
 
         {/* ── Screen (iframe) ── */}
-        <div style={{ flex:1, minHeight:0, background:"#000", position:"relative" }}>
+        {/* overflow+WebkitOverflowScrolling enable touch-scroll on iOS WebKit */}
+        <div style={{ flex:1, minHeight:0, background:"#000", position:"relative", overflow:"auto", WebkitOverflowScrolling:"touch" } as React.CSSProperties}>
           {embedUrl ? (
             <iframe
               key={embedUrl}
               src={embedUrl}
               style={{ width:"100%", height:"100%", border:"none", display:"block" }}
               allowFullScreen
-              allow="autoplay; encrypted-media; picture-in-picture"
+              /* webkit-allowfullscreen / mozallowfullscreen for older iOS/Firefox */
+              {...({ "webkit-allowfullscreen": "true", "mozallowfullscreen": "true" })}
+              allow="autoplay; encrypted-media; picture-in-picture; fullscreen; web-share"
               title={`${homeName} vs ${awayName}`}
             />
           ) : (

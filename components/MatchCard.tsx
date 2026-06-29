@@ -23,7 +23,7 @@ function hasMatchStarted(dateStr?: string, timeStr?: string): boolean {
   const [hh, mi] = timeStr.split(":").map(Number);
   if (!yyyy || isNaN(hh)) return false;
   const startMs = Date.UTC(yyyy, mm - 1, dd, hh + 4, mi); // EDT → UTC
-  return Date.now() >= startMs + 4 * 3_600_000; // show only 4h after kickoff
+  return Date.now() >= startMs + 165 * 60_000; // show 165 min after kickoff
 }
 
 export default function MatchCard({ match, predictions, liveResults, onPick, onDropTeam, onRemoveSlot }: Props) {
@@ -57,6 +57,13 @@ export default function MatchCard({ match, predictions, liveResults, onPick, onD
     ...match.away,
     name: match.away.isKnown ? getTeamName(match.away.id, locale, match.away.name) : match.away.name,
   };
+
+  // Tick every minute so hasMatchStarted() re-evaluates after the threshold passes
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick(n => n + 1), 60_000);
+    return () => clearInterval(id);
+  }, []);
 
   const showWatch = hasMatchStarted(match.date, match.time);
 
