@@ -11,22 +11,39 @@ interface Props {
   match: Match;
   predictions: Predictions;
   liveResults: Record<string, string>;
+  score?: { home: string; away: string };
+  isNextMatch?: boolean;
   onPick: (matchId: string, teamId: string) => void;
   onDropTeam: (matchId: string, slot: "home" | "away", teamId: string) => void;
   onRemoveSlot: (matchId: string, slot: "home" | "away") => void;
 }
 
-/** Returns true if the match has already started (EDT = UTC−4). */
-function hasMatchStarted(dateStr?: string, timeStr?: string): boolean {
-  if (!dateStr || !timeStr) return false;
+const HIGHLIGHT_DELAY_MS = 165 * 60_000;  // show YouTube button 165 min after kickoff
+const MATCH_DURATION_MS  = 188 * 60_000;  // assume match ends within 188 min
+
+function getMatchTimes(dateStr?: string, timeStr?: string): { startMs: number } | null {
+  if (!dateStr || !timeStr) return null;
   const [mm, dd, yyyy] = dateStr.split("/").map(Number);
   const [hh, mi] = timeStr.split(":").map(Number);
-  if (!yyyy || isNaN(hh)) return false;
-  const startMs = Date.UTC(yyyy, mm - 1, dd, hh + 4, mi); // EDT → UTC
-  return Date.now() >= startMs + 165 * 60_000; // show 165 min after kickoff
+  if (!yyyy || isNaN(hh)) return null;
+  return { startMs: Date.UTC(yyyy, mm - 1, dd, hh + 4, mi) }; // EDT → UTC
 }
 
-export default function MatchCard({ match, predictions, liveResults, onPick, onDropTeam, onRemoveSlot }: Props) {
+/** Returns true if the YouTube highlight button should appear. */
+function hasMatchStarted(dateStr?: string, timeStr?: string): boolean {
+  const t = getMatchTimes(dateStr, timeStr);
+  return t != null && Date.now() >= t.startMs + HIGHLIGHT_DELAY_MS;
+}
+
+/** Returns true if the match is currently in progress (kicked off, not yet finished). */
+function isMatchOngoing(dateStr?: string, timeStr?: string): boolean {
+  const t = getMatchTimes(dateStr, timeStr);
+  if (!t) return false;
+  const now = Date.now();
+  return now >= t.startMs && now < t.startMs + MATCH_DURATION_MS;
+}
+
+export default function MatchCard({ match, predictions, liveResults, score, isNextMatch, onPick, onDropTeam, onRemoveSlot }: Props) {
   const { locale } = useLocale();
   const liveWinner = liveResults[match.id];
   const predWinner = predictions[match.id];
@@ -43,6 +60,8 @@ export default function MatchCard({ match, predictions, liveResults, onPick, onD
   const awayRemovable = awayWasPlaceholder && match.away.isKnown && !isLocked && !match.away.isConfirmed;
 
   const bothKnown = match.home.isKnown && match.away.isKnown;
+  // Ongoing: kicked off but no official result yet and within 188-min window
+  const ongoing = !isLocked && isMatchOngoing(match.date, match.time);
 
   function handlePick(teamId: string) {
     if (isLocked) return;
@@ -113,6 +132,18 @@ return (
           {match.time && (
             <span className="text-[7px] text-white/15 uppercase tracking-wider ml-0.5">ET</span>
           )}
+          {ongoing && (
+            <span className="ml-1 inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[7px] font-bold text-emerald-400 ring-1 ring-emerald-500/25">
+              <span className="motion-safe:animate-bounce leading-none">⚽</span>
+              <span>LIVE</span>
+            </span>
+          )}
+          {isNextMatch && !ongoing && (
+            <span className="ml-1 inline-flex items-center gap-1 rounded-full bg-sky-500/12 px-1.5 py-0.5 text-[7px] font-bold text-sky-400 ring-1 ring-sky-500/20 motion-safe:animate-pulse">
+              <span className="leading-none">▶</span>
+              <span>NEXT</span>
+            </span>
+          )}
           {showWatch && highlightUrl && (
             <a
               href={highlightUrl}
@@ -141,6 +172,7 @@ return (
         isLoser={!!winner && winner !== match.home.id}
         isLocked={isLocked}
         onClick={bothKnown && !isLocked ? () => handlePick(match.home.id) : undefined}
+        score={score?.home}
         onDropTeam={homeWasPlaceholder && !match.home.isKnown ? tid => onDropTeam(match.id, "home", tid) : undefined}
         onRemove={homeRemovable ? () => onRemoveSlot(match.id, "home") : undefined}
         draggable={homeRemovable}
@@ -158,6 +190,7 @@ return (
         isLoser={!!winner && winner !== match.away.id}
         isLocked={isLocked}
         onClick={bothKnown && !isLocked ? () => handlePick(match.away.id) : undefined}
+        score={score?.away}
         onDropTeam={awayWasPlaceholder && !match.away.isKnown ? tid => onDropTeam(match.id, "away", tid) : undefined}
         onRemove={awayRemovable ? () => onRemoveSlot(match.id, "away") : undefined}
         draggable={awayRemovable}

@@ -30,8 +30,8 @@ function formatCountdown(diffMs: number): string {
   return `in ${m}m`;
 }
 
-// Max knockout match duration: 150 min (90 + ET + penalties)
-const MATCH_DURATION_MS = 150 * 60_000;
+// Max knockout match duration: 188 min (90 + ET + penalties + stoppages)
+const MATCH_DURATION_MS = 188 * 60_000;
 
 export default function LiveMatchTV({ matches }: Props) {
   // Tick every 30 s so badge and countdown stay fresh

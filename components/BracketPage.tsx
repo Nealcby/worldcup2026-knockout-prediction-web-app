@@ -74,6 +74,7 @@ export default function BracketPage() {
   const [teamMap, setTeamMap] = useState<Record<string, { name: string; flag: string }>>({});
   const [matchSchedule, setMatchSchedule] = useState<Record<string, { date: string; time: string }>>({});
   const [liveResultsById, setLiveResultsById] = useState<Record<string, string>>({});
+  const [liveScores, setLiveScores] = useState<Record<string, { home: string; away: string }>>({});
   const [dataLoading, setDataLoading] = useState(true);
 
   useEffect(() => {
@@ -108,6 +109,7 @@ export default function BracketPage() {
           setApiSlotMap(data.slotMap ?? {});
           setMatchSchedule(data.matchSchedule ?? {});
           setLiveResultsById(data.liveResultsById ?? {});
+          setLiveScores(data.liveScores ?? {});
         }
       })
       .catch(() => {})
@@ -126,6 +128,7 @@ export default function BracketPage() {
           setApiSlotMap(data.slotMap ?? {});
           setMatchSchedule(data.matchSchedule ?? {});
           setLiveResultsById(data.liveResultsById ?? {});
+          setLiveScores(data.liveScores ?? {});
         }
       }).catch(() => {});
     }, 5 * 60 * 1000);
@@ -463,6 +466,7 @@ export default function BracketPage() {
               matches={resolvedMatches}
               predictions={predictions}
               liveResults={liveResultsById}
+              liveScores={liveScores}
               onPick={handlePick}
               onDropTeam={handleDropTeam}
               onRemoveSlot={handleRemoveSlot}

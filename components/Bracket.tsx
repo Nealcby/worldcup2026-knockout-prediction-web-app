@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { Match, Predictions } from "@/lib/types";
 import MatchCard from "./MatchCard";
 import LiveMatchTV from "./LiveMatchTV";
@@ -9,6 +10,7 @@ interface Props {
   matches: Match[];
   predictions: Predictions;
   liveResults: Record<string, string>;
+  liveScores: Record<string, { home: string; away: string }>;
   onPick: (matchId: string, teamId: string) => void;
   onDropTeam: (matchId: string, slot: "home" | "away", teamId: string) => void;
   onRemoveSlot: (matchId: string, slot: "home" | "away") => void;
@@ -123,8 +125,32 @@ const COL_HEADERS: Record<number, { key: string; dates: string }> = {
   17: { key:"roundOf32",    dates:"Jun 28 – Jul 1" },
 };
 
-export default function Bracket({ matches, predictions, liveResults, onPick, onDropTeam, onRemoveSlot }: Props) {
+/** Parse MM/DD/YYYY + HH:MM EDT → UTC ms */
+function edtMs(date: string, time: string): number {
+  const [mm, dd, yyyy] = date.split("/").map(Number);
+  const [hh, mi] = time.split(":").map(Number);
+  return Date.UTC(yyyy, mm - 1, dd, hh + 4, mi);
+}
+
+export default function Bracket({ matches, predictions, liveResults, liveScores, onPick, onDropTeam, onRemoveSlot }: Props) {
   const { t } = useLocale();
+
+  // Tick every minute so nextMatchId updates without a page refresh
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNowMs(Date.now()), 60_000);
+    return () => clearInterval(id);
+  }, []);
+  let nextMatchId: string | null = null;
+  let nextMatchMs = Infinity;
+  for (const m of matches) {
+    if (!m.date || !m.time || liveResults[m.id]) continue; // skip finished
+    const start = edtMs(m.date, m.time);
+    if (start > nowMs && start < nextMatchMs) {
+      nextMatchMs = start;
+      nextMatchId = m.id;
+    }
+  }
 
   const totalW = COL_WIDTHS.slice(1).reduce((a, b) => a + b, 0);
   const totalH = HEADER_H + ROW_H * (16 + TV_ROWS);
@@ -193,6 +219,8 @@ export default function Bracket({ matches, predictions, liveResults, onPick, onD
                 match={match}
                 predictions={predictions}
                 liveResults={liveResults}
+                score={liveScores[matchId]}
+                isNextMatch={matchId === nextMatchId}
                 onPick={onPick}
                 onDropTeam={onDropTeam}
                 onRemoveSlot={onRemoveSlot}

@@ -96,7 +96,8 @@ export async function GET() {
 
     type ApiRow = { team?: { tla?: string; name?: string }; position: number; playedGames?: number; won?: number; draw?: number; lost?: number; goalsFor?: number; goalsAgainst?: number; points?: number };
     type ApiStanding = { type: string; group?: string; table?: ApiRow[] };
-    type ApiMatch = { stage: string; status: string; utcDate?: string; homeTeam?: { tla?: string }; awayTeam?: { tla?: string }; score?: { winner?: string } };
+    type ApiScore = { winner?: string; duration?: string; fullTime?: { home?: number; away?: number }; penalties?: { home?: number; away?: number } };
+    type ApiMatch = { stage: string; status: string; utcDate?: string; homeTeam?: { tla?: string }; awayTeam?: { tla?: string }; score?: ApiScore };
 
     const standings = (standingsJson.standings ?? []) as ApiStanding[];
     // API returns group as "Group A" (or legacy "GROUP_A") — handle both
@@ -203,6 +204,8 @@ export async function GET() {
     // tlaToSlot now includes 3rd-place assignments built above.
     const matchSchedule: Record<string, { date: string; time: string }> = {};
     const liveResultsById: Record<string, string> = {}; // bracketId → winner TLA
+    // bracketId → { home: "1", away: "0" } or { home: "2(4)", away: "2(5)" } for penalties
+    const liveScores: Record<string, { home: string; away: string }> = {};
 
     for (const apiMatch of allMatches) {
       if (!STAGE_ROUNDS[apiMatch.stage]) continue;
@@ -226,19 +229,32 @@ export async function GET() {
         matchSchedule[bracketMatch.id] = utcToEdt(apiMatch.utcDate);
       }
 
-      // Official result if match is finished
+      // Official result + score if match is finished
       if (apiMatch.status === "FINISHED") {
         const winner = apiMatch.score?.winner === "HOME_TEAM" ? homeTla
                      : apiMatch.score?.winner === "AWAY_TEAM" ? awayTla
                      : "";
         if (winner) liveResultsById[bracketMatch.id] = winner;
+
+        const ft = apiMatch.score?.fullTime;
+        if (ft && ft.home != null && ft.away != null) {
+          const isPens = apiMatch.score?.duration === "PENALTY_SHOOTOUT";
+          const pens   = apiMatch.score?.penalties;
+          // fullTime includes penalty goals, so regular+ET = fullTime - penalties
+          const homeRegular = isPens && pens?.home != null ? ft.home - pens.home : ft.home;
+          const awayRegular = isPens && pens?.away != null ? ft.away - pens.away : ft.away;
+          liveScores[bracketMatch.id] = {
+            home: isPens && pens?.home != null ? `${homeRegular}(${pens.home})` : `${ft.home}`,
+            away: isPens && pens?.away != null ? `${awayRegular}(${pens.away})` : `${ft.away}`,
+          };
+        }
       }
     }
 
     // Sort groups alphabetically
     groups.sort((a, b) => a.id.localeCompare(b.id));
 
-    const data = { groups, slotMap, matchSchedule, liveResultsById };
+    const data = { groups, slotMap, matchSchedule, liveResultsById, liveScores };
     cache = { ts: Date.now(), data };
     return NextResponse.json(data);
   } catch (e) {

@@ -8,6 +8,7 @@ interface Props {
   isWinner?: boolean;
   isLoser?: boolean;
   isLocked?: boolean;
+  score?: string; // e.g. "1" or "2(4)" for penalties
   onClick?: () => void;
   onRemove?: () => void;
   onDropTeam?: (teamId: string) => void;
@@ -17,7 +18,7 @@ interface Props {
 }
 
 export default function TeamSlot({
-  team, isWinner, isLoser, isLocked, onClick, onRemove,
+  team, isWinner, isLoser, isLocked, score, onClick, onRemove,
   onDropTeam, isDragOver, onDragOver, draggable: isDraggable,
 }: Props) {
   // isConfirmed = team is group-stage-confirmed in this slot (slot is locked, but match winner is still pickable)
@@ -115,18 +116,27 @@ export default function TeamSlot({
           }
         </span>
 
-        {/* State indicator (right side) */}
-        {isUserWinner && (
-          <span className="flex-shrink-0 w-3 h-3 rounded-full bg-blue-400 ring-2 ring-blue-400/30 shadow-[0_0_6px_rgba(96,165,250,0.6)]" />
-        )}
-        {isOfficialWinner && (
-          <span className="flex-shrink-0 w-3 h-3 rounded-full border-2 border-amber-400 bg-amber-400/20 shadow-[0_0_6px_rgba(251,191,36,0.5)]" />
-        )}
-        {isConfirmedSlot && (
-          <span className="flex-shrink-0 text-emerald-400 text-[10px] font-bold leading-none">✓</span>
-        )}
-        {!isUserWinner && !isOfficialWinner && !isConfirmedSlot && team.isKnown && (
-          <span className="flex-shrink-0 text-white/12 text-[10px] leading-none">–</span>
+        {/* Score (right side) — shown when official result exists */}
+        {score != null ? (
+          <span className={clsx(
+            "flex-shrink-0 text-[10px] font-bold leading-none tabular-nums",
+            isOfficialWinner ? "text-amber-300" : "text-white/35",
+          )}>{score}</span>
+        ) : (
+          <>
+            {isUserWinner && (
+              <span className="flex-shrink-0 w-3 h-3 rounded-full bg-blue-400 ring-2 ring-blue-400/30 shadow-[0_0_6px_rgba(96,165,250,0.6)]" />
+            )}
+            {isOfficialWinner && (
+              <span className="flex-shrink-0 w-3 h-3 rounded-full border-2 border-amber-400 bg-amber-400/20 shadow-[0_0_6px_rgba(251,191,36,0.5)]" />
+            )}
+            {isConfirmedSlot && (
+              <span className="flex-shrink-0 text-emerald-400 text-[10px] font-bold leading-none">✓</span>
+            )}
+            {!isUserWinner && !isOfficialWinner && !isConfirmedSlot && team.isKnown && (
+              <span className="flex-shrink-0 text-white/12 text-[10px] leading-none">–</span>
+            )}
+          </>
         )}
       </button>
 
