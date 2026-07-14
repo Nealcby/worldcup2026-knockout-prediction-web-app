@@ -146,11 +146,6 @@ export async function GET() {
     }
 
     // ── Process knockout match results ───────────────────────────────────
-    const STAGE_ROUNDS: Record<string, boolean> = {
-      LAST_32: true, LAST_16: true, QUARTER_FINALS: true,
-      SEMI_FINALS: true, THIRD_PLACE: true, FINAL: true,
-    };
-
     const allMatches = (matchesJson.matches ?? []) as ApiMatch[];
 
     // ── Detect 3rd-place slot assignments from Round of 32 API matches ──────
@@ -200,53 +195,66 @@ export async function GET() {
     }
 
     // ── Build matchSchedule (EDT times) and liveResultsById ──────────────
-    // For R32 matches we can identify bracketData match ID by team slot labels.
-    // tlaToSlot now includes 3rd-place assignments built above.
+    // Process rounds in order so tlaToSlot is updated with each round's winners
+    // before the next round is processed. e.g. after R32, tlaToSlot["CAN"]="W74"
+    // so R16 matches whose bracketData slot is "W74" can be identified.
     const matchSchedule: Record<string, { date: string; time: string }> = {};
     const liveResultsById: Record<string, string> = {}; // bracketId → winner TLA
-    // bracketId → { home: "1", away: "0" } or { home: "2(4)", away: "2(5)" } for penalties
     const liveScores: Record<string, { home: string; away: string }> = {};
 
-    for (const apiMatch of allMatches) {
-      if (!STAGE_ROUNDS[apiMatch.stage]) continue;
-      const homeTla: string | undefined = apiMatch.homeTeam?.tla;
-      const awayTla: string | undefined = apiMatch.awayTeam?.tla;
-      if (!homeTla || !awayTla) continue;
+    const STAGE_ORDER = [
+      "LAST_32", "LAST_16", "QUARTER_FINALS", "SEMI_FINALS", "THIRD_PLACE", "FINAL",
+    ];
 
-      const homeSlot = tlaToSlot[homeTla];
-      const awaySlot = tlaToSlot[awayTla];
-      if (!homeSlot || !awaySlot) continue;
+    for (const stage of STAGE_ORDER) {
+      const stageMatches = allMatches.filter((m) => m.stage === stage);
 
-      // Find the bracketData match whose slots match these two teams
-      const bracketMatch = INITIAL_MATCHES.find(m =>
-        (m.home.id === homeSlot && m.away.id === awaySlot) ||
-        (m.home.id === awaySlot && m.away.id === homeSlot)
-      );
-      if (!bracketMatch) continue;
+      for (const apiMatch of stageMatches) {
+        const homeTla: string | undefined = apiMatch.homeTeam?.tla;
+        const awayTla: string | undefined = apiMatch.awayTeam?.tla;
+        if (!homeTla || !awayTla) continue;
 
-      // Accurate EDT schedule time from API
-      if (apiMatch.utcDate) {
-        matchSchedule[bracketMatch.id] = utcToEdt(apiMatch.utcDate);
-      }
+        const homeSlot = tlaToSlot[homeTla];
+        const awaySlot = tlaToSlot[awayTla];
+        if (!homeSlot || !awaySlot) continue;
 
-      // Official result + score if match is finished
-      if (apiMatch.status === "FINISHED") {
-        const winner = apiMatch.score?.winner === "HOME_TEAM" ? homeTla
-                     : apiMatch.score?.winner === "AWAY_TEAM" ? awayTla
-                     : "";
-        if (winner) liveResultsById[bracketMatch.id] = winner;
+        // Find the bracketData match whose slots match these two teams
+        const bracketMatch = INITIAL_MATCHES.find((m) =>
+          (m.home.id === homeSlot && m.away.id === awaySlot) ||
+          (m.home.id === awaySlot && m.away.id === homeSlot)
+        );
+        if (!bracketMatch) continue;
 
-        const ft = apiMatch.score?.fullTime;
-        if (ft && ft.home != null && ft.away != null) {
-          const isPens = apiMatch.score?.duration === "PENALTY_SHOOTOUT";
-          const pens   = apiMatch.score?.penalties;
-          // fullTime includes penalty goals, so regular+ET = fullTime - penalties
-          const homeRegular = isPens && pens?.home != null ? ft.home - pens.home : ft.home;
-          const awayRegular = isPens && pens?.away != null ? ft.away - pens.away : ft.away;
-          liveScores[bracketMatch.id] = {
-            home: isPens && pens?.home != null ? `${homeRegular}(${pens.home})` : `${ft.home}`,
-            away: isPens && pens?.away != null ? `${awayRegular}(${pens.away})` : `${ft.away}`,
-          };
+        // Accurate EDT schedule time from API
+        if (apiMatch.utcDate) {
+          matchSchedule[bracketMatch.id] = utcToEdt(apiMatch.utcDate);
+        }
+
+        // Official result + score if match is finished
+        if (apiMatch.status === "FINISHED") {
+          const winner = apiMatch.score?.winner === "HOME_TEAM" ? homeTla
+                       : apiMatch.score?.winner === "AWAY_TEAM" ? awayTla
+                       : "";
+
+          if (winner) {
+            liveResultsById[bracketMatch.id] = winner;
+            // Key fix: register the winner under their next-round slot ID ("W74" etc.)
+            // so subsequent rounds can resolve their bracket slot from their TLA.
+            const winnerSlot = `W${bracketMatch.id.slice(1)}`; // "M74" → "W74"
+            tlaToSlot[winner] = winnerSlot;
+          }
+
+          const ft = apiMatch.score?.fullTime;
+          if (ft && ft.home != null && ft.away != null) {
+            const isPens = apiMatch.score?.duration === "PENALTY_SHOOTOUT";
+            const pens   = apiMatch.score?.penalties;
+            const homeRegular = isPens && pens?.home != null ? ft.home - pens.home : ft.home;
+            const awayRegular = isPens && pens?.away != null ? ft.away - pens.away : ft.away;
+            liveScores[bracketMatch.id] = {
+              home: isPens && pens?.home != null ? `${homeRegular}(${pens.home})` : `${ft.home}`,
+              away: isPens && pens?.away != null ? `${awayRegular}(${pens.away})` : `${ft.away}`,
+            };
+          }
         }
       }
     }
